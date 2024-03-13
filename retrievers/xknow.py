@@ -1,10 +1,11 @@
+import math
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from dataclasses import dataclass
 from retrievers.colbert.modeling.colbert import colbert_score
 from retrievers.colbert import ColBERT, ColBERTConfig
 from retrievers.layers.vit import CLIPVisionTower
-from retrievers.layers.fusion import QuerySampler
 from transformers import AutoConfig
 
 from retrievers.colbert.infra import ColBERTConfig
@@ -25,6 +26,104 @@ def build_vision_tower(model_name, **kwargs):
     
 def build_text_tower(text_tower_cfg: ColBERTConfig, **kwargs):
     return ColBERT(name=text_tower_cfg.checkpoint, colbert_config=text_tower_cfg)
+
+
+class QuerySampler(nn.Module):
+    def __init__(
+        self, t_dim, v_dim, num_tokens=32, kernel_size=3, out_dim=128
+    ):
+        super().__init__()
+        self.num_tokens = num_tokens
+        self.out_dim = out_dim
+
+        self.proj = nn.Sequential(
+            nn.LayerNorm(v_dim),
+            nn.Linear(v_dim, v_dim*4),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(v_dim*4, t_dim),
+        )
+
+        if kernel_size==3:
+            self.is_large = False
+            self.conv = nn.Sequential(
+                nn.Conv2d(v_dim+1, v_dim*2, kernel_size=kernel_size, stride=2, padding=0),
+                nn.LayerNorm((v_dim*2, 3, 3)),
+                nn.Tanh(),
+            )
+        elif kernel_size==4:
+            self.is_large = True
+            self.conv1 = nn.Sequential(
+                nn.Conv2d(v_dim+1, v_dim*2, kernel_size=kernel_size, stride=2, padding=0),
+                nn.LayerNorm((v_dim*2, 7, 7)),
+                nn.GELU()
+            )
+            self.conv2 = nn.Sequential(
+                nn.Conv2d(v_dim*2+1, v_dim*2, kernel_size=3, stride=2, padding=0),
+                nn.LayerNorm((v_dim*2, 3, 3)),
+                nn.Tanh()
+            )
+
+        self.linear = nn.Linear(v_dim*2, out_dim) 
+        
+        self.split_mlp = nn.Sequential(
+            nn.Linear(v_dim, (num_tokens*out_dim)//2),
+            nn.Tanh(),
+            nn.Linear((num_tokens*out_dim)//2, num_tokens*out_dim)
+        )
+        
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    def forward(self, t, v, t_attn_mask, return_relevance=False):
+        # Split CLS
+        v_cls = v[:,0:1]
+        tokens = self.split_mlp(v_cls)
+        tokens = tokens.view(v.size(0), self.num_tokens, self.out_dim)
+        
+        # Add latents
+        v_feats = v[:,1:] # B x S x D
+        v_n = self.proj(v_feats)
+        t_n = t / t.norm(dim=-1, keepdim=True)
+        v_n = v_n / v_n.norm(dim=-1, keepdim=True)
+        sim = v_n @ t_n.permute(0,2,1) # B x S x S'
+        sim = sim * t_attn_mask.unsqueeze(1)
+        sim = sim.max(dim=-1, keepdim=True)[0]
+
+        v_feats = torch.cat([v_feats, sim], dim=-1)
+        # v_feats = v_feats * (1.+sim)
+                            
+        hw = int(math.sqrt(v_feats.size(1)))
+        v_feats = v_feats.permute(0, 2, 1) # B D S
+        v_feats = v_feats.view(v.size(0), -1, hw, hw) # B D H W
+        if self.is_large:
+            v_feats = self.conv1(v_feats)
+            sim2 = sim.permute(0, 2, 1).view(v.size(0), 1, hw, hw)
+            sim2 = F.interpolate(sim2, (7, 7), mode="bilinear", align_corners=True)
+            v_feats = self.conv2(torch.cat([v_feats, sim2], dim=1))
+        else:
+            v_feats = self.conv(v_feats)
+        B, D, _, _ = v_feats.shape
+        v_feats = v_feats.view(B, D, -1).permute(0, 2, 1)
+
+        v_feats = self.linear(v_feats)
+        
+        Q =  torch.cat([tokens, v_feats], dim=1)
+        
+        if return_relevance:
+            return Q, sim.squeeze(-1)
+
+        return Q
 
 
 class RetXKnow(ColBERT):
