@@ -1,6 +1,6 @@
-# 🦮 Ret-XKnow: End-to-End Multi-modal Retriever
+# 🦮 Ret-XKnow: End-to-End **Ret**riever to e**X**pand visual **Know**ledge
 
-**End-to-End Multi-modal Retriever for Conveying Explicit Visual and Textual Knowledge**
+Ret-XKnow endows a text retriever with the understanding of multimodal queries in a context of efficient information retrieval.
 
 ## Settings
 
@@ -13,9 +13,9 @@ We employ [ColBERTv2](https://github.com/stanford-futuredata/ColBERT) as a text 
 
 1. Download instruction data and image datasets from the following pages: 
 
-- [Visual instruction dataset](https://github.com/haotian-liu/LLaVA?tab=readme-ov-file#visual-instruction-tuning) (Here, download images with the dialogue dataset)
+    - [Visual instruction dataset](https://github.com/haotian-liu/LLaVA?tab=readme-ov-file#visual-instruction-tuning) (Here, download images with the dialogue dataset)
 
-- [LVIS-Instruct4V](https://huggingface.co/datasets/X2FD/LVIS-Instruct4V)
+    - [LVIS-Instruct4V](https://huggingface.co/datasets/X2FD/LVIS-Instruct4V)
 
 2. Pre-processing and neural filtering using a text retriever:
     
@@ -30,5 +30,6 @@ We employ [ColBERTv2](https://github.com/stanford-futuredata/ColBERT) as a text 
     We require a knowledge base (KB) and a text retriever to convert dialogues to retrieval tasks. We adopt 6M Wikipedia passages as the KB. You can download the passages in this [link](http://storage.googleapis.com/gresearch/open-vision-language/Wiki6M_ver_1_0.jsonl.gz).
 
     ~~~bash
-    python3 -m runs.convert_tasks --data_path [path to pre-processed data] --colbert_ckpt [directory with colbert checkpoint] --db_pool [path to KB] --save_path data/vid2r/vid2r.json
+    python3 -m runs.convert_tasks --data_path [path to pre-processed data] --colbert_ckpt [directory with colbert checkpoint] --db_pool [path to KB] --save_path data/vid2r/ViD2R.json
     ~~~
+
