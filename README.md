@@ -14,6 +14,15 @@ Ret-XKnow endows a text retriever with the understanding of multimodal queries i
     pip3 install -r requirements.txt
     ~~~
 
+3. Download downstream task datasets.
+
+    We use two retrieval datasets curated from OK-VQA. Additionally, we conducted experiments for the Infoseek datset. You can download the dataset in the following links:
+
+    - [OK-VQA (Wiki-11M)](https://github.com/prdwb/okvqa-release)
+    - [OK-VQA (Google Search)](https://github.com/LinWeizheDragon/Retrieval-Augmented-Visual-Question-Answering?tab=readme-ov-file#download-datasets)
+        > In this dataset, questions in the annotation files include captions for images. Thus, we edit the questions to remove captions. See `dataset/vqa_ret.py` for details.
+    - [InfoSeek (Wiki-6M)](https://github.com/open-vision-language/infoseek)
+
 ## Visual Dialogue-to-Retrieval (ViD2R) Dataset Construction
 
 1. Download instruction data and image datasets from the following pages: 
@@ -60,10 +69,13 @@ python3 -m torch.distributed.run --nproc_per_node=$NPROC train_retrieval.py --co
 
 or 
 
-After modifying the shell file, execute the following command:
+After modifying the shell file `scripts/pretrain_xknow_inbatch.sh` to your path, execute the following command:
 
 ~~~bash
 bash scripts/pretrain_xknow_inbatch.sh
 ~~~
 
-This shell file evaluates zero-shot performance after learning. If indexing has already been done, comment out the execution of run_indexer.
+This shell file evaluates zero-shot performance after training. If indexing has already been done, comment out the execution of run_indexer.
+
+**Fine-tuning Ret-XKnow on the downstream task**
+

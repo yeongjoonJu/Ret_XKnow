@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 import wandb
 from retrievers.xknow import RetXKnow
 
-from dataset import get_dataloader, MMQADataset, VL_ICT
+from dataset import get_dataloader, ViD2RDataset, VL_ICT
 from dataset.okvqa import OKVQAGoogleSearchDataset, OKVQARetrievalDataset
 from dataset.infoseek import InfoSeekDataset
 import json
@@ -267,7 +267,7 @@ def main(config):
         
     elif data_cfg.dataset_name=="vid2r":
         src = config.data_config.vid2r
-        train_val_dataset = MMQADataset(src.data_path, src.img_dir,
+        train_val_dataset = ViD2RDataset(src.data_path, src.img_dir,
                         query_tokenizer, doc_tokenizer, img_processor,
                         img_cached=src.image_cached)
         val_samples = src.valid_samples
@@ -321,7 +321,6 @@ def main(config):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", default="config.yaml", help="Path to the config file.")
-    parser.add_argument("--port", type=int, default=29500)
 
     args = parser.parse_args()
     print(f"Loading config from {args.config_path}")

@@ -1,8 +1,8 @@
-# Train Ret-XKnow model on ViD2R dataset
+# Train Ret-XKnow model on WebQA dataset
 experiment:
     exp_name: "InBatch"
-    description: "xknow-vid2r-base"
-    path_suffix: "xknow/vid2r/base"
+    description: "xknow-vid2r-large"
+    path_suffix: "xknow/vid2r/large"
 
 # WandB settings
 wandb_config:
@@ -29,10 +29,11 @@ data_config:
         image_cached: True
         valid_samples: 1024
 
+
 # DataLoader settings
 dataloader_config:
     num_workers: 0
-    train_batch_size: 64
+    train_batch_size: 64  # 78597MiB / 81559MiB
     valid_batch_size: 64
 
 # Trainer settings
@@ -40,7 +41,7 @@ trainer_config:
     gradient_accumulation_steps: 1
     num_train_epochs: 15
     learning_rate: 5e-5
-    warmup_steps: 100 #100
+    warmup_steps: 100
     eval_steps: 500
     early_stop: 5  # TODO: we are not using this.
     print_freq: 50
@@ -57,11 +58,11 @@ evaluator:
 # Model settings
 model:
     short_name: "xknow"
-    vision_model_name: "openai/clip-vit-base-patch32"
+    vision_model_name: "openai/clip-vit-large-patch14"
     colbert_checkpoint: "ckpts/colbertv2.0"
     gather_embeddings: True
     num_tokens: 32
-    kernel_size: 3
+    kernel_size: 4
     hidden_size: 768
     pretraining: True
 

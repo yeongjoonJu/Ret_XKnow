@@ -1,8 +1,8 @@
-# Train Ret-XKnow model on ViD2R dataset
+# Train Ret-XKnow model on WebQA dataset
 experiment:
     exp_name: "InBatch"
-    description: "xknow-vid2r-base"
-    path_suffix: "xknow/vid2r/base"
+    description: "xknow-okvqa_wiki-ft"
+    path_suffix: "xknow/okvqa_wiki/ft"
 
 # WandB settings
 wandb_config:
@@ -21,13 +21,13 @@ data_config:
     in_batch_neg_num: 0  # TODO: Move this to model config
     shuffle_cand: True
     returns: null
-    nways: 1
-    dataset_name: "vid2r"
-    vid2r:
-        data_path: data/vid2r/ViD2R.json
-        img_dir: data/vid2r/images
-        image_cached: True
-        valid_samples: 1024
+    dataset_name: "okvqa"
+    okvqa:
+        data_path: data/okvqa/train2014_pairs_cap_combine_sum.txt
+        valid_data_path: data/okvqa/val2014_pairs_cap_combine_sum.txt
+        img_dir: data/images
+        image_cached: False
+
 
 # DataLoader settings
 dataloader_config:
@@ -38,15 +38,15 @@ dataloader_config:
 # Trainer settings
 trainer_config:
     gradient_accumulation_steps: 1
-    num_train_epochs: 15
-    learning_rate: 5e-5
-    warmup_steps: 100 #100
+    num_train_epochs: 10
+    learning_rate: 2e-5
+    warmup_steps: 200
     eval_steps: 500
     early_stop: 5  # TODO: we are not using this.
     print_freq: 50
-    weight_decay: 0.0 # 0.01 #TODO: we are not using this.
-    pretrained_checkpoint: ""
-    frozen: True
+    weight_decay: 0.0 
+    frozen: False
+    pretrained_checkpoint: "ckpts/xknow/vid2r/base/xknow_pretrained.pth"
 
 # Evaluator settings
 evaluator:
@@ -61,9 +61,9 @@ model:
     colbert_checkpoint: "ckpts/colbertv2.0"
     gather_embeddings: True
     num_tokens: 32
-    kernel_size: 3
     hidden_size: 768
-    pretraining: True
+    pretraining: False
+    kernel_size: 3
 
 ckpt_config:
     ckpt_dir: "ckpts/${experiment.path_suffix}" # ckpt will be saved to mbeir_dir/mbeir_checkpoint/experiment.path_suffix
