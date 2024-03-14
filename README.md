@@ -66,4 +66,4 @@ After modifying the shell file, execute the following command:
 bash scripts/pretrain_xknow_inbatch.sh
 ~~~
 
-This shell file 
+This shell file evaluates zero-shot performance after learning. If indexing has already been done, comment out the execution of run_indexer.
