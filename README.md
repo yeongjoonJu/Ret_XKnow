@@ -2,11 +2,9 @@
 
 Ret-XKnow endows a text retriever with the understanding of multimodal queries in a context of efficient information retrieval.
 
-<div align="center">
-  <video width="720" height="405" controls>
-    <source src="assets/demo.mp4" type="video/mp4">
-  </video>
-</div>
+**Web demo**
+
+![demo](assets/demo.gif)
 
 ## Settings
 
