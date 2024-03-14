@@ -2,6 +2,12 @@
 
 Ret-XKnow endows a text retriever with the understanding of multimodal queries in a context of efficient information retrieval.
 
+<div align="center">
+  <video width="720" height="405" controls>
+    <source src="assets/demo.mp4" type="video/mp4">
+  </video>
+</div>
+
 ## Settings
 
 1. Download the [pre-trained ColBERTv2 checkpoint](https://downloads.cs.stanford.edu/nlp/data/colbert/colbertv2/colbertv2.0.tar.gz) to `ckpts` and unzip the downloaded file to `ckpts/colbertv2.0`.
@@ -116,4 +122,28 @@ python3 -m runs.evaluate_retrieval \
     --anno_file [path to test file] \
     --xknow_ckpt $CHECKPOINT \
     --image_dir [directory to images]
+~~~
+
+## Web Demo
+
+**Settings**
+~~~bash
+pip3 install flask flask_cors
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
+nvm install --lts
+~~~
+
+**Web Server Start**
+~~~bash
+cd searcher
+npm install
+npm start
+~~~
+
+**Search Engine Start**
+
+Before you start this engine, check checkpoint path in this code.
+
+~~~bash
+python3 search_api.py
 ~~~
