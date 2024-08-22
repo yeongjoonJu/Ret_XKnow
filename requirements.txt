@@ -5,7 +5,7 @@ tqdm
 regex
 typeguard
 datasets==2.15.0
-transformers==4.31.0
+transformers>=4.31.0
 bitarray
 ninja
 spacy
@@ -23,3 +23,5 @@ torch>=2.0.1
 cairosvg
 wandb
 jsonlines
+scikit-image
+easydict
