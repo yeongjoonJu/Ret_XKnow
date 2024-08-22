@@ -20,6 +20,7 @@ from retrievers.xknow import RetXKnow
 
 from dataset import get_dataloader, ViD2RDataset, VL_ICT
 from dataset.okvqa import OKVQAGoogleSearchDataset, OKVQARetrievalDataset
+from dataset.aokvqa import AOKVQADataset
 from dataset.infoseek import InfoSeekDataset
 import json
 
@@ -114,8 +115,8 @@ def train(
         print(f"Resuming training from epoch {epoch}")
     for epoch in range(epoch, config.trainer_config.num_train_epochs):
         # Set different seed for different epoch
-        if is_distributed_mode:
-            train_loader.sampler.set_epoch(epoch)
+        # if is_distributed_mode:
+        #     train_loader.sampler.set_epoch(epoch)
 
         train_stats = train_one_epoch(
             model,
@@ -228,6 +229,8 @@ def main(config):
     query_tokenizer = QueryTokenizer(col_config)
     doc_tokenizer = DocTokenizer(col_config)
     img_processor = CLIPImageProcessor.from_pretrained(model_cfg.vision_model_name)
+    # query_tokenizer.query_maxlen = 32
+    # doc_tokenizer.doc_maxlen = 384
 
     data_cfg = config.data_config
     if data_cfg.dataset_name=="infoseek":
@@ -265,6 +268,15 @@ def main(config):
                         query_tokenizer, doc_tokenizer, img_processor,
                         img_cached=src.image_cached)
         
+    elif data_cfg.dataset_name=="aokvqa":
+        src = data_cfg.aokvqa
+        train_val_dataset = AOKVQADataset(
+                        src.data_path, src.img_dir,
+                        query_tokenizer, doc_tokenizer, img_processor,
+                        img_cached=src.image_cached)
+        val_samples = src.valid_samples
+        train_dataset, valid_dataset = random_split(train_val_dataset, [len(train_val_dataset)-val_samples, val_samples])
+        
     elif data_cfg.dataset_name=="vid2r":
         src = config.data_config.vid2r
         train_val_dataset = ViD2RDataset(src.data_path, src.img_dir,
@@ -272,7 +284,7 @@ def main(config):
                         img_cached=src.image_cached)
         val_samples = src.valid_samples
         train_dataset, valid_dataset = random_split(train_val_dataset, [len(train_val_dataset)-val_samples, val_samples])
-
+        
     elif data_cfg.dataset_name=="vl_ict":
         src = config.data_config.vl_ict
         train_dataset = train_dataset + VL_ICT(src.data_path, src.img_dir,
@@ -281,7 +293,8 @@ def main(config):
         valid_dataset = VL_ICT(src.data_path.replace("train", "val"), src.img_dir,
                         query_tokenizer, doc_tokenizer, img_processor,
                         img_cached=src.image_cached)
-
+        
+    
     train_loader = get_dataloader(train_dataset, shuffle=True, batch_size=config.dataloader_config.train_batch_size,
                                 num_workers=config.dataloader_config.num_workers,)
     valid_loader = get_dataloader(valid_dataset, shuffle=False, batch_size=config.dataloader_config.valid_batch_size,

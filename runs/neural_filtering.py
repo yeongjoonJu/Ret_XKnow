@@ -2,6 +2,7 @@ import argparse
 import json, re
 import random
 from tqdm import tqdm
+from dataset.base import load_jsonl
 from retrievers.colbert.data import Queries, Collection
 from retrievers.colbert.infra import Run, RunConfig, ColBERTConfig
 from retrievers.colbert import Searcher, Indexer
@@ -19,11 +20,13 @@ def is_bad_question(question):
 def filter_1st_stage(data, args):
     miniset = []
     doc_list = []
-    for sample in data:
+    for c, sample in tqdm(enumerate(data)):
         if not "image" in sample or "VG_100K" in sample["image"]:
             continue
         
         conv = sample["conversations"]
+        if not "id" in sample:
+            sample["id"] = c
         for t in range(0, len(conv)-1, 2):
             if conv[t]["from"]!="human" or conv[t+1]["from"]!="gpt":
                 break
@@ -41,7 +44,7 @@ def filter_1st_stage(data, args):
                 
             doc = re.sub(r"(certainly|sure)[!.]", "", doc) # Absolutely
             doc = re.sub(r"in (the|this) (image|scene|photo|picture)([,\s])?", "", doc)
-            doc = re.sub(r"the image (showcases|features|captures|depicts) ", "", doc)
+            doc = re.sub(r"the image (showcases|features|captures|depicts|shows|presents) ", "", doc)
             
             doc = doc.strip()
             doc = doc[0].upper() + doc[1:]
@@ -63,22 +66,25 @@ def filter_1st_stage(data, args):
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_path1", type=str, default="data/vid2r/llava_v1_5_mix665k.json")
-    parser.add_argument("--data_path2", type=str, default="data/vid2r/lvis_instruct4v_220k.json")
+    parser.add_argument("--data_paths", nargs="+", type=str, default=["data/vid2r/llava_v1_5_mix665k.json", "data/vid2r/lvis_instruct4v_220k.json"])
     parser.add_argument("--colbert_ckpt", type=str, default="ckpts/colbertv2.0")
     parser.add_argument("--save_path", type=str, default="data/vid2r/vid2r_wo_conversion.json")
     parser.add_argument("--n_bits", type=int, default=2)
     parser.add_argument("--n_ranks", type=int, default=4)
-    parser.add_argument("--n_cands", type=int, default=5)
+    parser.add_argument("--n_cands", type=int, default=3)
     parser.add_argument("--drop_len", type=int, default=30)
     parser.add_argument("--save_negative", action="store_true")
     args = parser.parse_args()
     
     # Load data
-    with open(args.data_path1, "r") as fin:
-        data = json.load(fin)
-    with open(args.data_path2, "r") as fin:
-        data.extend(json.load(fin))
+    data = []
+    for data_path in args.data_paths:
+        ext = data_path.split(".")[-1]
+        if ext=="json":
+            with open(data_path, "r") as fin:
+                data.extend(json.load(fin))
+        elif ext=="jsonl":
+            data.extend(load_jsonl(data_path))
     
     sub_data, doc_list = filter_1st_stage(data, args)
 
@@ -87,15 +93,15 @@ if __name__=="__main__":
     print(f"Loaded {len(collection):,} passages")
         
     # Indexing
-    index_name = f"filtering.nbits={args.n_bits}"
-    with Run().context(RunConfig(nranks=args.n_ranks, experiment="filtering")):
+    index_name = f"filtering2.nbits={args.n_bits}"
+    with Run().context(RunConfig(nranks=args.n_ranks, experiment="filtering2")):
         config = ColBERTConfig(nbits=args.n_bits, doc_maxlen=256, query_maxlen=64)
         indexer = Indexer(checkpoint=args.colbert_ckpt, config=config)
         indexer.index(name=index_name, collection=collection, overwrite=True)
     print("Indexing is Finished!")
     
     # Search
-    with Run().context(RunConfig(experiment="filtering")):
+    with Run().context(RunConfig(experiment="filtering2")):
         searcher = Searcher(index=index_name, config=config, collection=collection)
     
     filtered = []
