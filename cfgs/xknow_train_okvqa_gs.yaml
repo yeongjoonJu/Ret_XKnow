@@ -11,7 +11,7 @@ wandb_config:
 
 # Logger settings
 logger_config:
-    logger_out_dir: "logger/${experiment.path_suffix}"  # logger will be saved to mbeir_dir/logger/experiment.path_suffix
+    logger_out_dir: "logger/${experiment.path_suffix}"
     logger_out_file_name: "train.log"  #TODO: add date to log file name
 
 # Dataset settings
@@ -25,7 +25,7 @@ data_config:
     dataset_name: "okvqa_gs"
     okvqa:
         data_path: data/okvqa/RAVQA_v2_data/okvqa/pre-extracted_features/passages/retriever_train_w_negs.json
-        img_dir: data/images
+        img_dir: data/vid2r/images
         image_cached: False
         valid_data_path: data/okvqa/RAVQA_v2_data/okvqa/pre-extracted_features/passages/retriever_testdev.json
 
@@ -46,7 +46,7 @@ trainer_config:
     early_stop: 5  # TODO: we are not using this.
     print_freq: 50
     weight_decay: 0.0
-    pretrained_checkpoint: "ckpts/xknow/vid2r/base/xknow_pretrained.pth"
+    pretrained_checkpoint: "ckpts/xknow/vid2r_s2/base/xknow_pretrained.pth"
     frozen: False
 
 # Evaluator settings
@@ -61,8 +61,8 @@ model:
     vision_model_name: "openai/clip-vit-base-patch32"
     colbert_checkpoint: "ckpts/colbertv2.0"
     gather_embeddings: True
-    num_tokens: 32
-    kernel_size: 3
+    num_tokens: 16
+    kernel_size: 5
     hidden_size: 768
     pretraining: False
 

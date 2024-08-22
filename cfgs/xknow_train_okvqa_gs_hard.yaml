@@ -1,8 +1,8 @@
 # Train Ret-XKnow model on WebQA dataset
 experiment:
     exp_name: "InBatch"
-    description: "xknow-vid2r-large"
-    path_suffix: "xknow/vid2r/large"
+    description: "xknow-okvqa_gs-ft_hard8"
+    path_suffix: "xknow/okvqa_gs/ft_hard8"
 
 # WandB settings
 wandb_config:
@@ -21,33 +21,33 @@ data_config:
     in_batch_neg_num: 0  # TODO: Move this to model config
     shuffle_cand: True
     returns: null
-    nways: 1
-    dataset_name: "vid2r"
-    vid2r:
-        data_path: data/vid2r/ViD2R.json
+    nways: 8
+    dataset_name: "okvqa_gs"
+    okvqa:
+        data_path: data/okvqa/RAVQA_v2_data/okvqa/pre-extracted_features/passages/retriever_train_w_negs.json
         img_dir: data/vid2r/images
-        image_cached: True
-        valid_samples: 1024
+        image_cached: False
+        valid_data_path: data/okvqa/RAVQA_v2_data/okvqa/pre-extracted_features/passages/retriever_testdev.json
 
 
 # DataLoader settings
 dataloader_config:
     num_workers: 0
-    train_batch_size: 64  # 78597MiB / 81559MiB
-    valid_batch_size: 64
+    train_batch_size: 32
+    valid_batch_size: 32
 
 # Trainer settings
 trainer_config:
     gradient_accumulation_steps: 1
-    num_train_epochs: 15
-    learning_rate: 5e-5
-    warmup_steps: 100
+    num_train_epochs: 20
+    learning_rate: 2e-5
+    warmup_steps: 10
     eval_steps: 500
     early_stop: 5  # TODO: we are not using this.
     print_freq: 50
-    weight_decay: 0.0 # 0.01 #TODO: we are not using this.
-    pretrained_checkpoint: ""
-    frozen: True
+    weight_decay: 0.0
+    pretrained_checkpoint: "ckpts/xknow/vid2r/base/xknow_pretrained.pth"
+    frozen: False
 
 # Evaluator settings
 evaluator:
@@ -58,13 +58,13 @@ evaluator:
 # Model settings
 model:
     short_name: "xknow"
-    vision_model_name: "openai/clip-vit-large-patch14"
+    vision_model_name: "openai/clip-vit-base-patch32"
     colbert_checkpoint: "ckpts/colbertv2.0"
     gather_embeddings: True
-    num_tokens: 32
-    kernel_size: 4
+    num_tokens: 16
+    kernel_size: 5
     hidden_size: 768
-    pretraining: True
+    pretraining: False
 
 ckpt_config:
     ckpt_dir: "ckpts/${experiment.path_suffix}" # ckpt will be saved to mbeir_dir/mbeir_checkpoint/experiment.path_suffix
