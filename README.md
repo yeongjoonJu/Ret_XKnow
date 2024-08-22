@@ -20,7 +20,7 @@ Ret-XKnow endows a text retriever with the understanding of multimodal queries i
 
 3. Download downstream task datasets.
 
-    We use two retrieval datasets curated from OK-VQA. Additionally, we conducted experiments for the Infoseek datset. You can download the dataset in the following links:
+    We use two retrieval datasets curated from OK-VQA, ReMuQ, and A-OKVQA. You can download the dataset in the following links:
 
     - [OK-VQA (Wiki-11M)](https://github.com/prdwb/okvqa-release)
         Download annotation files to `data/okvqa`.
@@ -28,7 +28,9 @@ Ret-XKnow endows a text retriever with the understanding of multimodal queries i
     - [OK-VQA (Google Search)](https://github.com/LinWeizheDragon/Retrieval-Augmented-Visual-Question-Answering?tab=readme-ov-file#download-datasets)
         In this dataset, questions in the annotation files include captions for images. Thus, we edit the questions to remove captions. See `dataset/vqa_ret.py` for details.
 
-    - [InfoSeek (Wiki-6M)](https://github.com/open-vision-language/infoseek)
+    - [ReMuQ](https://github.com/luomancs/ReMuQ)
+
+    - [A-OKVQA](https://github.com/allenai/aokvqa)
 
 ## Visual Dialogue-to-Retrieval (ViD2R) Dataset Construction
 
@@ -43,7 +45,7 @@ Ret-XKnow endows a text retriever with the understanding of multimodal queries i
     You can skip the neural filtering step by modifying the code if you want to build the dataset fast.
 
     ~~~bash
-    python3 -m runs.neural_filtering --data_path1 [path to data1] --data_path2 [path to data2] --colbert_ckpt [directory with colbert checkpoint] --save_path [path to save]
+    python3 -m runs.neural_filtering --data_paths path_to_data1 path_to_data2 --colbert_ckpt [directory_with_colbert_checkpoint] --save_path [path_to_save]
     ~~~
 
 3. Converting responses to passages:
@@ -53,6 +55,8 @@ Ret-XKnow endows a text retriever with the understanding of multimodal queries i
     ~~~bash
     python3 -m runs.convert_tasks --data_path [path to pre-processed data] --colbert_ckpt [directory with colbert checkpoint] --db_pool [path to KB] --save_path data/vid2r/ViD2R.json
     ~~~
+
+Please check `scripts/make_pretraining_data` as an example.
 
 ## Training Ret-XKnow
 
