@@ -5,12 +5,14 @@ import base64
 # For colbert
 from retrievers.colbert.infra import Run, RunConfig, ColBERTConfig
 from retrievers.colbert import Searcher
+from collections import defaultdict
+from retrievers.colbert.data import Collection
 # For Ret-XKnow
 from retrievers.indexing import XknowSearcher
 from dataset.base import load_jsonl
 import pytrec_eval
 import numpy as np
-import random
+from tqdm import tqdm
 
 
 def search(queries, collection, args, images=None):
@@ -51,7 +53,8 @@ if __name__=="__main__":
     parser.add_argument("--save_path", type=str, default="results/eval_okvqa_xknow_clip.json")
     parser.add_argument("--image_dir", type=str, default=None, help="data/wiki/wikipedia_images_full")
     parser.add_argument("--xknow_ckpt", type=str, default=None)
-    parser.add_argument("--dataset_name", type=str, default="okvqa", help="okvqa|remuq|okvqa_gs|infoseek")
+    parser.add_argument("--save_pairs", action='store_true')
+    parser.add_argument("--dataset_name", type=str, default="okvqa", help="okvqa|aokvqa|remuq|okvqa_gs|infoseek")
     args = parser.parse_args()
     
     queries = {}
@@ -74,31 +77,82 @@ if __name__=="__main__":
                 images[d["q_id"]] = f"{args.image_dir}/{d['image']}"
         
         collection, passage_ids = get_collection(args.all_blocks_file, return_ids=True)
-       
+        
+    elif args.dataset_name=="aokvqa":
+        from dataset.aokvqa import parse_pairs
+        pairs, pid2passage = parse_pairs(args.anno_file, image_dir=args.image_dir)
+        for d in pairs:
+            queries[d["q_id"]] = d["question"]
+            if args.image_dir is not None:
+                images[d["q_id"]] = d['image']
+                        
+        passage_ids = list(pid2passage.keys())
+        collection = Collection(data=list(pid2passage.values()))
+    
+    elif args.dataset_name in ["vid2r", "vl_ict"]:
+        from dataset.vid2r import parse_pairs
+        pairs, pid2passage = parse_pairs(args.anno_file)
+        meta = {}
+        for d in pairs:
+            queries[d["q_id"]] = d["question"]
+            meta[d["q_id"]] = d["q_id"]
+        
+        passage_ids = list(pid2passage.keys())
+        collection = Collection(data=list(pid2passage.values()))
+            
+    elif args.dataset_name=="fvqa":
+        from dataset.fvqa import parse_pairs, get_collection
+        pairs = parse_pairs(args.anno_file, args.image_dir)
+        qid2pid = {}
+        for d in pairs:
+            queries[d["q_id"]] = d["question"]
+            if args.image_dir is not None:
+                images[d["q_id"]] = d['image']
+            qid2pid[d["q_id"]] = d["passage_ids"]
+        
+        collection, pid2passage = get_collection(args.all_blocks_file)
+        passage_ids = list(pid2passage.keys())
+                       
     elif args.dataset_name=="okvqa_gs":
         from dataset.vqa_ret import parse_pairs, get_collection, gen_qrels
         
         # Passages
         pairs = parse_pairs(args.anno_file)
-        """
-        with open("data/webqa/imgs.lineidx", "r") as fp_lineidx:
-            lineidx = [int(i.strip()) for i in fp_lineidx.readlines()]
-        fp = open("data/webqa/imgs.tsv", "r")
         
-        for d in pairs:
-            queries[d["q_id"]] = d["question"]
-            fp.seek(lineidx[int(d["image"])%10000000])
-            imgid, img_base64 = fp.readline().strip().split("\t")
-            images[d["q_id"]] = BytesIO(base64.b64decode(img_base64))  
-        fp.close()
-        """
         for d in pairs:
             queries[d["q_id"]] = d["question"]
             if args.image_dir is not None:
                 images[d["q_id"]] = f"{args.image_dir}/{d['image']}.jpg"
 
         collection, passage_ids, pid2passage = get_collection(args.all_blocks_file, return_ids=True)
-
+    
+    elif args.dataset_name=="remuq":
+        from dataset.vqa_ret import parse_pairs, get_collection, gen_qrels
+        
+        # Passages
+        pairs = parse_pairs(args.anno_file)
+        with open("data/webqa/imgs.lineidx", "r") as fp_lineidx:
+            lineidx = [int(i.strip()) for i in fp_lineidx.readlines()]
+        fp = open("data/webqa/imgs.tsv", "r")
+        
+        meta = {}
+        for d in pairs:
+            meta[d["q_id"]] = d['golden_pid']
+            queries[d["q_id"]] = d["question"]
+            fp.seek(lineidx[int(d["image"])%10000000])
+            imgid, img_base64 = fp.readline().strip().split("\t")
+            images[d["q_id"]] = BytesIO(base64.b64decode(img_base64))  
+        fp.close()
+        
+        import pandas as pd
+        _pid2passage = pd.read_csv(args.all_blocks_file)
+        _pid2passage = _pid2passage.to_dict()
+        pid2passage = {}
+        for kid, text in zip(_pid2passage['kid'].values(), _pid2passage['text'].values()):
+            pid2passage[str(kid)] = text
+        passage_ids = list(pid2passage.keys())
+        collection = Collection(data=list(pid2passage.values()))
+        
     elif args.dataset_name=="infoseek":
         from dataset.infoseek import parse_pairs, get_collection
         from dataset.vqa_ret import gen_qrels
@@ -107,7 +161,6 @@ if __name__=="__main__":
         # kb_mapping = load_jsonl("data/infoseek/oven_entity_test.jsonl") # infoseek_val_withkb
         pairs = parse_pairs(args.anno_file)#, kb_mapping=kb_mapping, wiki_db=wiki_db)
         
-        data = []
         not_exist_images = 0
         for d in pairs:
             queries[d["q_id"]] = d["question"]
@@ -139,12 +192,70 @@ if __name__=="__main__":
         # query relevance
         if args.dataset_name=="okvqa":
             qrels = dynamic_eval.gen_qrels(qids, I, passage_ids)
+        elif args.dataset_name=="aokvqa":
+            qrels = defaultdict(dict)
+            for question_id, retrieved_ids in tqdm(zip(qids, I), total=len(qids)):
+                if question_id not in qrels:
+                    qrels[str(question_id)] = {'placeholder': 0}
+                for retrieved_id in retrieved_ids:
+                    passage_id = passage_ids[retrieved_id]
+                    if passage_id==question_id:
+                        qrels[str(question_id)][str(passage_id)] = 1
+        elif args.dataset_name in ["vid2r", "vl_ict"]:
+            qrels = defaultdict(dict)
+            for question_id, retrieved_ids in tqdm(zip(qids, I), total=len(qids)):
+                if question_id not in qrels:
+                    qrels[str(question_id)] = {"placeholder": 0}
+                for retrieved_id in retrieved_ids:
+                    passage_id = passage_ids[retrieved_id]
+                    if str(passage_id)==str(meta[question_id]):
+                        qrels[str(question_id)][str(passage_id)] = 1
+        elif args.dataset_name=="fvqa":
+            qrels = defaultdict(dict)
+            for question_id, retrieved_ids in tqdm(zip(qids, I), total=len(qids)):
+                if question_id not in qrels:
+                    qrels[str(question_id)] = {"placeholder": 0}
+                for retrieved_id in retrieved_ids:
+                    passage_id = passage_ids[retrieved_id]
+                    if passage_id in qid2pid[question_id]:
+                        qrels[str(question_id)][str(passage_id)] = 1
+        elif args.dataset_name=="remuq":
+            qrels = defaultdict(dict)
+            for question_id, retrieved_ids in tqdm(zip(qids, I), total=len(qids)):
+                if question_id not in qrels:
+                    qrels[str(question_id)] = {"placeholder": 0}
+                for retrieved_id in retrieved_ids:
+                    passage_id = passage_ids[retrieved_id]
+                    if passage_id==meta[question_id]:
+                        qrels[str(question_id)][str(passage_id)] = 1
         else:
             passage_ids = [str(k) for k in passage_ids]
             # query relevance
             # golden_pids = {int(s["q_id"]): str(s["golden_pid"]) for s in pairs}
             qid2answers = {int(s['q_id']): s['answers'] for s in pairs}
             qrels = gen_qrels(qids, I, passage_ids, qid2answers=qid2answers, pid2passage=pid2passage)
+
+        if args.save_pairs and ret_rank==5:
+            top5_docs = []
+            for q_i, r_i, s_i in zip(qids, I, D):
+                top5_docs.append({
+                    "question_id": q_i,
+                    "question": queries[q_i],
+                    "passages": [],
+                    "pid": [],
+                    "retrieval_score": [],
+                    "meta": meta[q_i]
+                })
+                # "image": os.path.basename(images[q_i]),
+                for r, s in zip(r_i, s_i):
+                    p_i = passage_ids[r]
+                    passage = pid2passage[p_i]
+                    top5_docs[-1]['pid'].append(p_i)
+                    top5_docs[-1]['passages'].append(passage)
+                    top5_docs[-1]["retrieval_score"].append(s)
+
+            with open(args.save_path[:-5]+"_docs.json", "w") as fout:
+                json.dump(top5_docs, fout, indent=2, ensure_ascii=False)
         
         run = {}
         for qid, retrieved_ids, scores in zip(qids, I, D):
