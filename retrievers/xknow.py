@@ -7,9 +7,9 @@ from retrievers.colbert.modeling.colbert import colbert_score
 from retrievers.colbert import ColBERT, ColBERTConfig
 from retrievers.layers.vit import CLIPVisionTower
 from transformers import AutoConfig
-
 from retrievers.colbert.infra import ColBERTConfig
 from retrievers.colbert.infra.config.core_config import DefaultVal
+
 
 @dataclass
 class XKnowConfig(ColBERTConfig):
@@ -35,36 +35,43 @@ class QuerySampler(nn.Module):
         super().__init__()
         self.num_tokens = num_tokens
         self.out_dim = out_dim
+        self.kernel_size = kernel_size
 
         self.proj = nn.Sequential(
             nn.LayerNorm(v_dim),
-            nn.Linear(v_dim, v_dim*4),
-            nn.GELU(),
-            nn.Dropout(0.1),
-            nn.Linear(v_dim*4, t_dim),
+            nn.Linear(v_dim, t_dim),
+            nn.GELU()
         )
+        self.k_state = nn.Linear(t_dim, t_dim, bias=False)
 
         if kernel_size==3:
             self.is_large = False
-            self.conv = nn.Sequential(
-                nn.Conv2d(v_dim+1, v_dim*2, kernel_size=kernel_size, stride=2, padding=0),
-                nn.LayerNorm((v_dim*2, 3, 3)),
+            self.conv = nn.Sequential( #  t_dim*2
+                nn.Conv2d(t_dim+1, t_dim*2, kernel_size=kernel_size, stride=2, padding=0),
+                nn.LayerNorm((t_dim*2, 3, 3)),
                 nn.Tanh(),
             )
+            
         elif kernel_size==4:
             self.is_large = True
             self.conv1 = nn.Sequential(
-                nn.Conv2d(v_dim+1, v_dim*2, kernel_size=kernel_size, stride=2, padding=0),
-                nn.LayerNorm((v_dim*2, 7, 7)),
+                nn.Conv2d(t_dim+1, t_dim*2, kernel_size=kernel_size, stride=2, padding=0),
+                nn.LayerNorm((t_dim*2, 7, 7)),
                 nn.GELU()
             )
             self.conv2 = nn.Sequential(
-                nn.Conv2d(v_dim*2+1, v_dim*2, kernel_size=3, stride=2, padding=0),
-                nn.LayerNorm((v_dim*2, 3, 3)),
+                nn.Conv2d(t_dim*2+1, t_dim*2, kernel_size=3, stride=2, padding=0),
+                nn.LayerNorm((t_dim*2, 3, 3)),
                 nn.Tanh()
             )
-
-        self.linear = nn.Linear(v_dim*2, out_dim) 
+        elif kernel_size==5:
+            self.is_large = False
+            self.conv = nn.Sequential( #  t_dim*2
+                nn.Conv2d(t_dim+1, t_dim*2, kernel_size=kernel_size, stride=2, padding=0),
+                nn.Tanh()
+            )
+            
+        self.linear = nn.Linear(t_dim*2, out_dim*4)
         
         self.split_mlp = nn.Sequential(
             nn.Linear(v_dim, (num_tokens*out_dim)//2),
@@ -91,17 +98,20 @@ class QuerySampler(nn.Module):
         tokens = self.split_mlp(v_cls)
         tokens = tokens.view(v.size(0), self.num_tokens, self.out_dim)
         
+        # return tokens
+        
         # Add latents
         v_feats = v[:,1:] # B x S x D
-        v_n = self.proj(v_feats)
+        v_feats = self.proj(v_feats)
+        key_layer = self.k_state(v_feats)
+        
         t_n = t / t.norm(dim=-1, keepdim=True)
-        v_n = v_n / v_n.norm(dim=-1, keepdim=True)
+        v_n = key_layer / key_layer.norm(dim=-1, keepdim=True)
         sim = v_n @ t_n.permute(0,2,1) # B x S x S'
         sim = sim * t_attn_mask.unsqueeze(1)
         sim = sim.max(dim=-1, keepdim=True)[0]
-
+        
         v_feats = torch.cat([v_feats, sim], dim=-1)
-        # v_feats = v_feats * (1.+sim)
                             
         hw = int(math.sqrt(v_feats.size(1)))
         v_feats = v_feats.permute(0, 2, 1) # B D S
@@ -113,19 +123,30 @@ class QuerySampler(nn.Module):
             v_feats = self.conv2(torch.cat([v_feats, sim2], dim=1))
         else:
             v_feats = self.conv(v_feats)
+            
         B, D, _, _ = v_feats.shape
         v_feats = v_feats.view(B, D, -1).permute(0, 2, 1)
-
+        
+        if not self.training:
+            with torch.no_grad():
+                filters = sim.view(B,1,hw,hw)
+                filters = F.max_pool2d(filters, self.kernel_size, stride=2, padding=0)
+                indices = filters.view(B,-1).argmax(dim=-1)
+                indices = indices.view(B,1,1).expand(-1,-1,D)
+                v_feats = torch.gather(v_feats, dim=1, index=indices)    
+        
         v_feats = self.linear(v_feats)
         
-        Q =  torch.cat([tokens, v_feats], dim=1)
+        B, _, D = v_feats.shape
+        v_feats = v_feats.reshape(B, -1, D//4)                                
+        Q =  torch.cat([tokens, v_feats], dim=1)                        
         
         if return_relevance:
             return Q, sim.squeeze(-1)
 
         return Q
 
-
+    
 class RetXKnow(ColBERT):
     def __init__(self, config, colbert_config=None):
         super().__init__(name=config.colbert_checkpoint, colbert_config=colbert_config)
@@ -134,6 +155,7 @@ class RetXKnow(ColBERT):
         vis_hidden_size = vision_config.hidden_size
         hidden_size = config.hidden_size
         self.config = config
+        self.pretraining = self.config.pretraining
             
         self.vision_tower = build_vision_tower(config.vision_model_name)
 
@@ -199,6 +221,7 @@ class RetXKnow(ColBERT):
         accuracy = None
         if return_loss:
             labels = torch.zeros(scores.size(0), dtype=torch.long, device=scores.device)
+            # scores /= 0.37
             loss = F.cross_entropy(scores, labels)
             
             if self.colbert_config.use_ib_negatives:
@@ -240,9 +263,12 @@ class RetXKnow(ColBERT):
     def query(self, Q_t, Q_i, attention_mask, image_attn_mask=None):
         if Q_i is not None:
             Q_i = self.query_fusion(Q_t, Q_i, t_attn_mask=attention_mask)
-            Q_t = self.linear(Q_t)
-            Q_t = Q_t * attention_mask.unsqueeze(2).float()
-            Q = torch.cat([Q_i, Q_t], dim=1)
+            if self.pretraining:
+                Q = Q_i
+            else:
+                Q_t = self.linear(Q_t)
+                Q_t = Q_t * attention_mask.unsqueeze(2).float()
+                Q = torch.cat([Q_i, Q_t], dim=1)
         else:
             Q = self.linear(Q_t)
             Q = Q * attention_mask.unsqueeze(2).float()
