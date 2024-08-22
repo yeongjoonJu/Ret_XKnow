@@ -1,5 +1,5 @@
 # Update config
-export WANDB_API_KEY=9a6625212c3e9beff56070d25b7ac5667d550cb3
+export WANDB_API_KEY=[WANDB_API_KEY]
 
 CONFIG_PATH=cfgs/xknow_train_vid2r.yaml
 
