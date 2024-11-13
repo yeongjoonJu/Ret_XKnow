@@ -17,6 +17,7 @@ from omegaconf import OmegaConf
 from dotenv import load_dotenv
 import wandb
 from retrievers.xknow import RetXKnow
+from retrievers.preflmr import PreFLMR
 
 from dataset import get_dataloader, ViD2RDataset, VL_ICT
 from dataset.okvqa import OKVQAGoogleSearchDataset, OKVQARetrievalDataset
@@ -178,8 +179,16 @@ def main(config):
     # Set colbert configuration
     col_config = ColBERTConfig.load_from_checkpoint(colbert_ckpt)
     col_config.nway = config.data_config.nways
-
-    model = RetXKnow(model_cfg, colbert_config=col_config)
+    
+    if config.model.short_name=='xknow':
+        model = RetXKnow(model_cfg, colbert_config=col_config)
+    elif config.model.short_name=="preflmr":
+        model = PreFLMR(model_cfg, colbert_config=col_config)
+        
+    def count_parameters(model):
+        return sum(p.numel() for p in model.parameters())
+    
+    print("#Params:", count_parameters(model))
     
     if config.trainer_config.pretrained_checkpoint:
         print("Load checkpoint: ", config.trainer_config.pretrained_checkpoint)
@@ -216,8 +225,11 @@ def main(config):
         
     # Move model to GPUs
     model.train()
+    
     model.freeze_parameters(config.trainer_config.frozen)
     model = model.to(config.dist_config.gpu_id)
+    
+    
     model_without_ddp = model
     if is_distributed_mode:
         model = DDP(model, device_ids=[config.dist_config.gpu_id], find_unused_parameters=True)
@@ -285,15 +297,16 @@ def main(config):
         val_samples = src.valid_samples
         train_dataset, valid_dataset = random_split(train_val_dataset, [len(train_val_dataset)-val_samples, val_samples])
         
+        
     elif data_cfg.dataset_name=="vl_ict":
         src = config.data_config.vl_ict
-        train_dataset = train_dataset + VL_ICT(src.data_path, src.img_dir,
+        train_dataset = VL_ICT(src.data_path, src.img_dir,
                         query_tokenizer, doc_tokenizer, img_processor,
                         img_cached=src.image_cached)
         valid_dataset = VL_ICT(src.data_path.replace("train", "val"), src.img_dir,
                         query_tokenizer, doc_tokenizer, img_processor,
                         img_cached=src.image_cached)
-        
+    
     
     train_loader = get_dataloader(train_dataset, shuffle=True, batch_size=config.dataloader_config.train_batch_size,
                                 num_workers=config.dataloader_config.num_workers,)
